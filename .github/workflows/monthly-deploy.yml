@@ -1,0 +1,45 @@
+name: Monthly update Worker from upstream
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@v4
+        with:
+          repository: cmliu/CF-Workers-WebSSH
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Deploy Worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: b4da395a441239c51baa774080b37164
+
+      - name: Ensure custom domain
+        run: |
+          curl -fsS -X PUT "https://api.cloudflare.com/client/v4/accounts/b4da395a441239c51baa774080b37164/workers/domains" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data "{\"hostname\":\"ssh.81938193.xyz\",\"zone_id\":\"36d4f2f980a4c6776926fcbe93841f65\",\"service\":\"cf-workers-webssh\",\"environment\":\"production\"}"
+
+      - name: Health check
+        run: |
+          curl -fsS https://ssh.81938193.xyz/api/health
+          curl -fsS -o /dev/null -w "%{http_code}\n" https://ssh.81938193.xyz/
